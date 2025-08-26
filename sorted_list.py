@@ -2,20 +2,18 @@ import bisect as _bisect
 import itertools as _itertools
 from operator import index as _index
 from sys import maxsize as _maxsize
-from collections.abc import Iterator as _Iterator, Sized as _Sized
 
 
 class SortedList(list):
     """
     A list that maintains its items in ascending order.
-    
-    All stored items must be mutually comparable; if this requirement is not met,
-    the behavior is undefined. Most operations rely solely on the `<` comparison,
-    mirroring the behavior of the built-in `sort`.
 
-    The full range of standard list operations is supported, save for the
-    `insert`, `sort` and `reverse` methods, which have been intentionally
-    disabled due to their incompatibility with the semantics of a sorted list.
+    Items are expected to be comparable in a consistent way.  The ordering is
+    stable and newly inserted items follow existing ones. Only `<` comparison
+    is used between items, matching the built-in `sort` behavior.
+
+    Many standard list operations are available, but some have been disabled
+    due to their incompatibility with the semantics of a sorted list.
 
     Example
     -------
@@ -25,11 +23,11 @@ class SortedList(list):
     >>> sl.append(4)
     >>> sl
     SortedList([1, 3, 4, 5])
-    
+
     Performance notes
     -----------------
-    Binary search is employed where applicable to improve performance. Note that
-    insertion and deletion still requires shifting, as with the built-in list.
+    Binary search is used where applicable to improve performance. Note that
+    insertion and deletion still require shifting, as with the built-in list.
     """
 
     def __init__(self, items=None):
@@ -43,44 +41,23 @@ class SortedList(list):
         result = list.__new__(SortedList)
         result.extend(_itertools.islice(self, *index.indices(len(self))))
         return result
-
+    
     def __contains__(self, item):
         index = _bisect.bisect_left(self, item)
-        return index != len(self) and not item < self[index]
+        for other in map(self.__getitem__, range(index, len(self))):
+            if item == other:
+                return True
+            if item < other:
+                return False
+        return False
     
-    def __setitem__(self, index, item):
-        if isinstance(index, slice):
-            if isinstance(item, _Iterator) or not isinstance(item, _Sized):
-                item = [*item]
-            list.__setitem__(self, index, item)
-            n = len(item)
-            if n != 1:
-                if n:
-                    list.sort(self)
-                return
-            [item] = item
-            n = len(self)
-            index = index.indices(n)[0]
-        else:
-            index = _index(index)
-            list.__setitem__(self, index, item)
-            n = len(self)
-            index %= n
-        if index and item < self[index - 1]:
-            del self[index]
-            index = _bisect.bisect_right(self, item, 0, index)
-            list.insert(self, index, item)
-        elif index + 1 != n and self[index + 1] < item:
-            del self[index]
-            index = _bisect.bisect_left(self, item, index, n - 1)
-            list.insert(self, index, item)
+    __setitem__ = None
     
     def __add__(self, other):
         if not isinstance(other, list):
             return NotImplemented
         result = list.__new__(SortedList)
-        list.extend(result, self)
-        list.extend(result, other)
+        list.extend(result, _itertools.chain(self, other))
         n = len(result) - len(self)
         if n == 1:
             item = result.pop()
@@ -109,22 +86,31 @@ class SortedList(list):
         return result
     
     __rmul__ = __mul__
-
+    
     def __imul__(self, n):
         data = list.copy(self)
         list.__init__(self, _itertools.chain.from_iterable(_itertools.repeat(item, n) for item in data))
     
     def index(self, item, start=0, stop=_maxsize):
-        index = _bisect.bisect_left(self, item, start, min(len(self), _index(stop)))
-        if index == len(self) or item < self[index]:
-            raise ValueError
-        return index
+        stop = min(len(self), _index(stop))
+        index = _bisect.bisect_left(self, item, start, stop)
+        for index in range(index, stop):
+            other = self[index]
+            if item == other:
+                return index
+            if item < other:
+                break
+        raise ValueError
     
     def count(self, item):
+        result = 0
         index = _bisect.bisect_left(self, item)
-        if index == len(self) or item < self[index]:
-            return 0
-        return _bisect.bisect_right(self, item) - index
+        for other in map(self.__getitem__, range(index, len(self))):
+            if item == other:
+                result += 1
+            if item < other:
+                return result
+        return result
     
     def copy(self):
         result = list.__new__(SortedList)
@@ -151,6 +137,11 @@ class SortedList(list):
     
     def remove(self, item):
         index = _bisect.bisect_left(self, item)
-        if index == len(self) or item < self[index]:
-            raise ValueError
-        del self[index]
+        for index in range(index, len(self)):
+            other = self[index]
+            if item == other:
+                del self[index]
+                return
+            if item < other:
+                break
+        raise ValueError
