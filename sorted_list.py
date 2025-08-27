@@ -30,10 +30,9 @@ class SortedList(list):
     insertion and deletion still require shifting, as with the built-in list.
     """
 
-    def __init__(self, items=None):
-        if items:
-            list.__init__(self, items)
-            list.sort(self)
+    def __init__(self, items=()):
+        list.__init__(self, items)
+        list.sort(self)
     
     def __getitem__(self, index):
         if not isinstance(index, slice):
@@ -145,3 +144,4 @@ class SortedList(list):
             if item < other:
                 break
         raise ValueError
+
